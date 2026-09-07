@@ -59,7 +59,7 @@ docker compose up -d --build
 | --------- | ---------------------- | --------------- | ---------------------------- |
 | `web`     | http://127.0.0.1:8000  | `WEB_PORT`      | Flask app served by gunicorn |
 | `db`      | localhost:5433         | `POSTGRES_PORT` | PostgreSQL 16                |
-| `pgadmin` | http://127.0.0.1:5051  | `PGADMIN_PORT`  | DB browser (`admin@example.com` / `admin`) |
+| `pgadmin` | http://127.0.0.1:5051  | `PGADMIN_PORT`  | DB browser, see [Browsing the database](#browsing-the-database) |
 
 [docker-entrypoint.sh](docker-entrypoint.sh) runs `flask db upgrade` before
 starting gunicorn, so migrations are applied on every container start — no
@@ -184,6 +184,39 @@ and one default payment method, so the endpoint is usable immediately after
 with a fixed seed (`Faker.seed(0)`), which is why the cart ID and the
 `139.78` total above are exactly what you'll get on a fresh database.
 
+### Browsing the database
+
+`docker compose up` also starts pgAdmin on http://127.0.0.1:5051. It runs in
+desktop mode (`PGADMIN_CONFIG_SERVER_MODE: "False"`), so it opens straight
+into the browser UI with no login. `PGADMIN_EMAIL` / `PGADMIN_PASSWORD` are
+still required by the image at startup, but you won't be asked for them.
+
+A `payment-endpoint` server pointing at the `db` container is provisioned
+automatically from [pgadmin/servers.json](pgadmin/servers.json), which is
+mounted into the container. Expand it and enter the Postgres password
+(`POSTGRES_PASSWORD`, `postgres` by default) when prompted — pgAdmin stores
+the connection, not the password.
+
+pgAdmin imports `servers.json` **only on first start**, while its
+`pgadmin_data` volume is still empty. If you edit that file, or you changed
+`POSTGRES_USER` / `POSTGRES_DB` after pgAdmin had already started, reset the
+volume to re-import:
+
+```bash
+docker compose down -v && docker compose up -d
+```
+
+To add the connection by hand instead — *Register → Server*, then:
+
+| Field           | Value                                          |
+| --------------- | ---------------------------------------------- |
+| Name            | anything                                        |
+| Host            | `db` (the compose service, not `localhost`)     |
+| Port            | `5432` (the in-network port, not `POSTGRES_PORT`) |
+| Maintenance DB  | `POSTGRES_DB` (`payment_endpoint`)              |
+| Username        | `POSTGRES_USER` (`postgres`)                    |
+| Password        | `POSTGRES_PASSWORD` (`postgres`)                |
+
 ## Tests
 
 ```bash
@@ -240,6 +273,10 @@ start).
 the source at build time and there's no bind mount, so rebuild with
 `docker compose up -d --build`, or use Option B for iteration.
 
-**pgAdmin has no server configured** — it ships without a preconfigured
-connection. Add one pointing at host `db`, port `5432`, with the credentials
-above.
+**pgAdmin has no server configured** — `servers.json` is imported only on
+pgAdmin's first start. Run `docker compose down -v && docker compose up -d` to
+reset its volume, or add the server manually; see
+[Browsing the database](#browsing-the-database).
+
+**pgAdmin can't connect to `localhost:5433`** — that's the host-side address.
+From inside the compose network, use host `db` and port `5432`.
